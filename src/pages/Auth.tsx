@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/hooks/useAuth';
+import { api } from '@/lib/api';
+import { useAuth, setAuthSession } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -24,22 +24,18 @@ export default function Auth() {
     e.preventDefault();
     setBusy(true);
     try {
+      let result;
       if (tab === 'signup') {
-        const { error } = await supabase.auth.signUp({
-          email, password,
-          options: {
-            emailRedirectTo: `${window.location.origin}/`,
-            data: { display_name: name || email.split('@')[0] },
-          },
-        });
-        if (error) throw error;
+        result = await api.signup(email, password, name || email.split('@')[0]);
         toast({ title: 'Account created', description: 'You are signed in.' });
       } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
+        result = await api.signin(email, password);
         toast({ title: 'Welcome back!' });
       }
-      nav('/');
+      setAuthSession(result.token, result.user);
+      localStorage.setItem('auth_token', result.token);
+      // Force a page reload so AuthProvider re-hydrates the user
+      window.location.href = '/';
     } catch (err: any) {
       toast({ title: 'Authentication error', description: err.message, variant: 'destructive' });
     } finally {

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { supabase } from '@/integrations/supabase/client';
+import { api } from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
 import { FEATURED_PLAYLISTS, getTrack, TRACKS } from '@/data/seed';
 import { TrackRow } from '@/components/TrackRow';
@@ -23,7 +23,6 @@ export default function Playlist() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [q, setQ] = useState('');
 
-  // "/playlist/featured/:id" is the featured route variant
   const isFeatured = kind === 'featured';
 
   const refresh = async () => {
@@ -33,12 +32,17 @@ export default function Playlist() {
       setMeta(fp ? { ...fp, isFeatured: true } : null);
       setTrackIds(fp?.trackIds ?? []);
     } else if (id) {
-      const { data: pl } = await supabase.from('playlists').select('*').eq('id', id).maybeSingle();
-      setMeta(pl);
-      const { data: pt } = await supabase
-        .from('playlist_tracks').select('track_id, position')
-        .eq('playlist_id', id).order('position', { ascending: true });
-      setTrackIds((pt ?? []).map((r: any) => r.track_id));
+      try {
+        const [pl, tracks] = await Promise.all([
+          api.getPlaylist(id),
+          api.getPlaylistTracks(id),
+        ]);
+        setMeta(pl);
+        setTrackIds(tracks);
+      } catch {
+        setMeta(null);
+        setTrackIds([]);
+      }
     }
     setLoading(false);
   };
@@ -54,21 +58,21 @@ export default function Playlist() {
   const isOwner = !isFeatured && user && meta.user_id === user.id;
 
   const removeTrack = async (trackId: string) => {
-    if (!isOwner) return;
-    await supabase.from('playlist_tracks').delete().eq('playlist_id', id).eq('track_id', trackId);
+    if (!isOwner || !id) return;
+    await api.removeTrackFromPlaylist(id, trackId);
     refresh();
   };
 
   const addTrack = async (trackId: string) => {
-    if (!isOwner) return;
-    await supabase.from('playlist_tracks').insert({ playlist_id: id!, track_id: trackId, position: trackIds.length });
+    if (!isOwner || !id) return;
+    await api.addTrackToPlaylist(id, trackId, trackIds.length);
     toast({ title: 'Added to playlist' });
     refresh();
   };
 
   const deletePlaylist = async () => {
-    if (!isOwner) return;
-    await supabase.from('playlists').delete().eq('id', id);
+    if (!isOwner || !id) return;
+    await api.deletePlaylist(id);
     nav('/library');
   };
 

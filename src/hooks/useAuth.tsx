@@ -1,34 +1,48 @@
 import { createContext, useContext, useEffect, useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { api } from '@/lib/api';
 
-const AuthCtx = createContext<any>({ user: null, session: null, loading: true });
+interface AuthUser {
+  id: string;
+  email: string;
+  display_name: string;
+}
+
+interface AuthCtxType {
+  user: AuthUser | null;
+  loading: boolean;
+  signOut: () => void;
+}
+
+const AuthCtx = createContext<AuthCtxType>({ user: null, loading: true, signOut: () => {} });
 
 export function AuthProvider({ children }: { children: any }) {
-  const [session, setSession] = useState<any>(null);
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // IMPORTANT: set up listener BEFORE getSession
-    const { data: sub } = supabase.auth.onAuthStateChange((_evt, s) => {
-      setSession(s);
-      setUser(s?.user ?? null);
-    });
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      setUser(data.session?.user ?? null);
-      setLoading(false);
-    });
-    return () => sub.subscription.unsubscribe();
+    const token = localStorage.getItem('auth_token');
+    if (!token) { setLoading(false); return; }
+    api.me()
+      .then(({ user }) => setUser(user))
+      .catch(() => { localStorage.removeItem('auth_token'); })
+      .finally(() => setLoading(false));
   }, []);
 
-  const signOut = async () => { await supabase.auth.signOut(); };
+  const signOut = () => {
+    localStorage.removeItem('auth_token');
+    setUser(null);
+  };
 
   return (
-    <AuthCtx.Provider value={{ user, session, loading, signOut }}>
+    <AuthCtx.Provider value={{ user, loading, signOut }}>
       {children}
     </AuthCtx.Provider>
   );
+}
+
+// Called after successful login/signup to persist token and user
+export function setAuthSession(token: string, user: AuthUser) {
+  localStorage.setItem('auth_token', token);
 }
 
 export const useAuth = () => useContext(AuthCtx);

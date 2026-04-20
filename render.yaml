@@ -1,0 +1,30 @@
+services:
+  # Backend API service
+  - type: web
+    name: rhythmictunes-backend
+    runtime: node
+    region: oregon
+    plan: free
+    buildCommand: cd server && npm install
+    startCommand: cd server && npm start
+    envVars:
+      - key: MONGODB_URI
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 5000
+
+  # Frontend service (optional - can also use Vercel)
+  - type: static_site
+    name: rhythmictunes-frontend
+    runtime: node
+    region: oregon
+    plan: free
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_URL
+        value: https://rhythmictunes-backend.onrender.com

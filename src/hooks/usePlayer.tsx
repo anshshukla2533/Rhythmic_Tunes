@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { api } from '@/lib/api';
 import { TRACKS, getTrack } from '@/data/seed';
 import { useAuth } from './useAuth';
 
@@ -47,7 +47,7 @@ export function PlayerProvider({ children }: { children: any }) {
     if (isPlaying) a.play().catch(() => setIsPlaying(false));
     // Log history
     if (user) {
-      supabase.from('listening_history').insert({ user_id: user.id, track_id: current.id }).then(() => {});
+      api.recordPlay(current.id).catch(() => {});
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentId]);

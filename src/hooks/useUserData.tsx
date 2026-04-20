@@ -1,6 +1,6 @@
 // Convenience hooks: liked tracks, followed artists, listening history, playlists.
 import { useEffect, useState, useCallback } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { api } from '@/lib/api';
 import { useAuth } from './useAuth';
 
 export function useLikes() {
@@ -9,8 +9,10 @@ export function useLikes() {
 
   const refresh = useCallback(async () => {
     if (!user) return setLikes(new Set());
-    const { data } = await supabase.from('liked_tracks').select('track_id').eq('user_id', user.id);
-    setLikes(new Set((data ?? []).map((r: any) => r.track_id)));
+    try {
+      const trackIds: string[] = await api.getLikes();
+      setLikes(new Set(trackIds));
+    } catch { setLikes(new Set()); }
   }, [user]);
 
   useEffect(() => { refresh(); }, [refresh]);
@@ -18,12 +20,21 @@ export function useLikes() {
   const toggle = async (trackId: string) => {
     if (!user) return false;
     const has = likes.has(trackId);
-    if (has) {
-      await supabase.from('liked_tracks').delete().eq('user_id', user.id).eq('track_id', trackId);
-      setLikes(s => { const n = new Set(s); n.delete(trackId); return n; });
-    } else {
-      await supabase.from('liked_tracks').insert({ user_id: user.id, track_id: trackId });
-      setLikes(s => new Set(s).add(trackId));
+    // Optimistic update
+    setLikes(s => {
+      const n = new Set(s);
+      has ? n.delete(trackId) : n.add(trackId);
+      return n;
+    });
+    try {
+      await api.toggleLike(trackId);
+    } catch {
+      // Revert on error
+      setLikes(s => {
+        const n = new Set(s);
+        has ? n.add(trackId) : n.delete(trackId);
+        return n;
+      });
     }
     return !has;
   };
@@ -37,8 +48,10 @@ export function useFollows() {
 
   const refresh = useCallback(async () => {
     if (!user) return setFollows(new Set());
-    const { data } = await supabase.from('followed_artists').select('artist_id').eq('user_id', user.id);
-    setFollows(new Set((data ?? []).map((r: any) => r.artist_id)));
+    try {
+      const artistIds: string[] = await api.getFollows();
+      setFollows(new Set(artistIds));
+    } catch { setFollows(new Set()); }
   }, [user]);
 
   useEffect(() => { refresh(); }, [refresh]);
@@ -46,12 +59,19 @@ export function useFollows() {
   const toggle = async (artistId: string) => {
     if (!user) return false;
     const has = follows.has(artistId);
-    if (has) {
-      await supabase.from('followed_artists').delete().eq('user_id', user.id).eq('artist_id', artistId);
-      setFollows(s => { const n = new Set(s); n.delete(artistId); return n; });
-    } else {
-      await supabase.from('followed_artists').insert({ user_id: user.id, artist_id: artistId });
-      setFollows(s => new Set(s).add(artistId));
+    setFollows(s => {
+      const n = new Set(s);
+      has ? n.delete(artistId) : n.add(artistId);
+      return n;
+    });
+    try {
+      await api.toggleFollow(artistId);
+    } catch {
+      setFollows(s => {
+        const n = new Set(s);
+        has ? n.add(artistId) : n.delete(artistId);
+        return n;
+      });
     }
     return !has;
   };
@@ -62,36 +82,43 @@ export function useFollows() {
 export function useHistory() {
   const { user } = useAuth();
   const [history, setHistory] = useState<string[]>([]);
+
   const refresh = useCallback(async () => {
     if (!user) return setHistory([]);
-    const { data } = await supabase
-      .from('listening_history').select('track_id, played_at')
-      .eq('user_id', user.id).order('played_at', { ascending: false }).limit(100);
-    setHistory((data ?? []).map((r: any) => r.track_id));
+    try {
+      const trackIds: string[] = await api.getHistory();
+      setHistory(trackIds);
+    } catch { setHistory([]); }
   }, [user]);
+
   useEffect(() => { refresh(); }, [refresh]);
+
   return { history, refresh };
 }
 
 export function usePlaylists() {
   const { user } = useAuth();
   const [playlists, setPlaylists] = useState<any[]>([]);
+
   const refresh = useCallback(async () => {
     if (!user) return setPlaylists([]);
-    const { data } = await supabase.from('playlists').select('*').eq('user_id', user.id).order('created_at', { ascending: false });
-    setPlaylists(data ?? []);
+    try {
+      const data = await api.getPlaylists();
+      setPlaylists(data);
+    } catch { setPlaylists([]); }
   }, [user]);
+
   useEffect(() => { refresh(); }, [refresh]);
 
   const create = async (name: string, description?: string) => {
     if (!user) return null;
-    const { data, error } = await supabase.from('playlists').insert({ user_id: user.id, name, description }).select().single();
-    if (!error) await refresh();
+    const data = await api.createPlaylist(name, description);
+    await refresh();
     return data;
   };
 
   const remove = async (id: string) => {
-    await supabase.from('playlists').delete().eq('id', id);
+    await api.deletePlaylist(id);
     await refresh();
   };
 
